@@ -93,7 +93,7 @@ function mostrarPantalla(id) {
 
 function mensajeAuthError(e) {
   const c = e && e.code ? e.code : '';
-  if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found')) return 'Correo o contraseña incorrectos.';
+  if (c.includes('invalid-credential') || c.includes('credential') || c.includes('wrong-password') || c.includes('user-not-found')) return 'Correo o contraseña incorrectos.';
   if (c.includes('invalid-email')) return 'El correo no tiene un formato válido.';
   if (c.includes('too-many-requests')) return 'Demasiados intentos fallidos. Espera un momento y prueba de nuevo.';
   if (c.includes('network')) return 'Sin conexión a internet. Revisa tu red.';
@@ -628,6 +628,45 @@ document.addEventListener('DOMContentLoaded', () => {
       mostrarErrorLogin(mensajeAuthError(err));
       btn.disabled = false;
     }
+  });
+
+  document.getElementById('lg-crear').addEventListener('click', async (e) => {
+    e.preventDefault();
+    let yaHay = false;
+    try {
+      const q = await db.collection('usuarios').limit(1).get();
+      yaHay = !q.empty;
+    } catch {}
+    if (yaHay) {
+      mostrarErrorLogin('Ya existe una cuenta de administrador. Entra con tu usuario normal; si necesitas otra cuenta, pídesela al administrador desde Configuración → Usuarios.');
+      return;
+    }
+    const m = abreModal('Crear cuenta del administrador', `
+      <p class="item-sub" style="margin-bottom:12px">Esta opción solo está disponible la primera vez. Con tu correo y una contraseña crearás el usuario dueño del negocio.</p>
+      <label class="campo">Correo electrónico<input id="cr-email" type="email"></label>
+      <label class="campo">Contraseña (mínimo 6 caracteres)<input id="cr-pass" type="text" autocomplete="off"></label>
+      <label class="campo">Repite la contraseña<input id="cr-pass2" type="text" autocomplete="off"></label>
+      <div class="modal-acciones">
+        <button class="btn btn-gris" id="cr-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="cr-crear">Crear mi cuenta</button>
+      </div>`);
+    m.querySelector('#cr-cancel').addEventListener('click', cierraModal);
+    m.querySelector('#cr-crear').addEventListener('click', async () => {
+      const email = m.querySelector('#cr-email').value.trim();
+      const pass = m.querySelector('#cr-pass').value;
+      const pass2 = m.querySelector('#cr-pass2').value;
+      if (!/^\S+@\S+\.\S+$/.test(email)) { toast('Escribe un correo válido', 'error'); return; }
+      if (!pass || pass.length < 6) { toast('La contraseña debe tener mínimo 6 caracteres', 'error'); return; }
+      if (pass !== pass2) { toast('Las contraseñas no coinciden', 'error'); return; }
+      try {
+        await auth.createUserWithEmailAndPassword(email, pass);
+        cierraModal();
+        toast('Cuenta creada. Ahora completa los datos de tu negocio.', 'ok');
+      } catch (err) {
+        mostrarErrorLogin(mensajeAuthError(err));
+        cierraModal();
+      }
+    });
   });
 
   document.getElementById('lg-reset').addEventListener('click', (e) => {
