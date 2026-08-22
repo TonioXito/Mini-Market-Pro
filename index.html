@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Mi Minimarket - Ventas, Inventario, Cobros y Pagos</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div id="toasts"></div>
+  <div id="modales"></div>
+  <button id="btn-instalar" class="oculto">📲 Instalar aplicación</button>
+
+  <!-- PANTALLA LOGIN -->
+  <section id="scr-login" class="pantalla-auth oculto">
+    <div class="auth-card">
+      <div class="auth-logo">$</div>
+      <h1>Mi Minimarket</h1>
+      <p class="auth-sub">Inicia sesión para continuar</p>
+      <form id="lg-form" autocomplete="on">
+        <label>Correo electrónico
+          <input id="lg-email" type="email" placeholder="tucorreo@ejemplo.com" required autocomplete="username">
+        </label>
+        <label>Contraseña
+          <input id="lg-pass" type="password" placeholder="••••••••" required autocomplete="current-password">
+        </label>
+        <p id="lg-err" class="msg-error oculto"></p>
+        <button id="lg-btn" type="submit" class="btn btn-primary btn-block">Entrar</button>
+      </form>
+      <a href="#" id="lg-reset" class="link-suave">Olvidé mi contraseña</a>
+    </div>
+  </section>
+
+  <!-- PANTALLA PRIMER USO (crear administrador) -->
+  <section id="scr-primer" class="pantalla-auth oculto">
+    <div class="auth-card">
+      <div class="auth-logo">$</div>
+      <h1>Bienvenido</h1>
+      <p class="auth-sub">Configura tu minimarket por primera vez. Tú serás el administrador.</p>
+      <p class="item-sub" style="margin:-8px 0 14px">Registrando: <b id="pu-email"></b></p>
+      <label>Nombre del negocio
+        <input id="pu-negocio" type="text" placeholder="Ej: Bodega La Esquina">
+      </label>
+      <label>Tu nombre
+        <input id="pu-nombre" type="text" placeholder="Ej: Juan Pérez">
+      </label>
+      <label>Tasa del día (Bs por $)
+        <input id="pu-tasa" type="number" step="0.01" min="0.01" placeholder="Ej: 40.50">
+      </label>
+      <p id="pu-err" class="msg-error oculto"></p>
+      <button id="pu-btn" class="btn btn-primary btn-block">Crear mi cuenta de administrador</button>
+    </div>
+  </section>
+
+  <!-- PANTALLA FALTA CONFIGURAR FIREBASE -->
+  <section id="scr-config" class="pantalla-auth oculto">
+    <div class="auth-card">
+      <div class="auth-logo">!</div>
+      <h1>Falta configurar Firebase</h1>
+      <div class="texto-instrucciones">
+        <p>Abre el archivo <b>firebase-config.js</b> que está junto a este app y pega allí las claves de tu proyecto de Firebase.</p>
+        <p>Sigue la guía paso a paso del archivo <b>INSTRUCCIONES.md</b>. Solo se hace una vez.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- APP -->
+  <div id="app" class="app oculto">
+
+    <aside id="sidebar">
+      <div class="sb-marca"><span class="sb-logo">$</span><span id="sb-nombre-negocio">Mi Minimarket</span></div>
+      <nav id="sb-nav"></nav>
+      <div class="sb-pie">
+        <div id="sb-usuario" class="sb-usuario"></div>
+        <button id="sb-salir" class="btn btn-fantasma btn-chico">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <main class="principal">
+      <header id="topbar">
+        <div class="tb-izq"><span id="tb-titulo">Inicio</span></div>
+        <div class="tb-der">
+          <button id="tb-tasa" class="chip-tasa" title="Tasa del día">Bs —</button>
+          <span id="tb-usuario" class="chip-usuario"></span>
+          <button id="tb-salir" class="btn-icono" title="Cerrar sesión">⏻</button>
+        </div>
+      </header>
+
+      <div id="vistas">
+        <section class="vista" id="vista-dashboard"><div class="vista-body" id="cont-dashboard"></div></section>
+        <section class="vista" id="vista-ventas"><div class="vista-body" id="cont-ventas"></div></section>
+        <section class="vista" id="vista-inventario"><div class="vista-body" id="cont-inventario"></div></section>
+        <section class="vista" id="vista-clientes"><div class="vista-body" id="cont-clientes"></div></section>
+        <section class="vista" id="vista-proveedores"><div class="vista-body" id="cont-proveedores"></div></section>
+        <section class="vista" id="vista-reportes"><div class="vista-body" id="cont-reportes"></div></section>
+        <section class="vista" id="vista-configuracion"><div class="vista-body" id="cont-config"></div></section>
+      </div>
+    </main>
+
+    <nav id="bn-bar"></nav>
+
+    <div id="sheet" class="sheet oculto">
+      <div class="sheet-panel">
+        <div class="sheet-tira"></div>
+        <div id="sheet-items"></div>
+        <button id="sheet-cerrar" class="btn btn-fantasma btn-block">Cancelar</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/ui2.js"></script>
+  <script src="js/ui3.js"></script>
+</body>
+</html>
