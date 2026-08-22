@@ -102,6 +102,23 @@ function mensajeAuthError(e) {
   return 'Ocurrió un problema: ' + (e.message || c);
 }
 
+const DOMINIO_LOCAL = '@minimarket.local';
+
+function aEmailLogin(v) {
+  v = String(v || '').trim();
+  if (!v) return '';
+  return v.includes('@') ? v : v.toLowerCase().replace(/\s+/g, '') + DOMINIO_LOCAL;
+}
+function mostrarAcceso(email) {
+  return String(email || '').replace(DOMINIO_LOCAL, '');
+}
+async function usuariosVacios() {
+  try {
+    const q = await db.collection('usuarios').limit(1).get();
+    return q.empty;
+  } catch { return null; }
+}
+
 function arrancarAuth() {
   if (!CONFIG_OK) { mostrarPantalla('scr-config'); return; }
   mostrarPantalla('scr-login');
@@ -620,10 +637,21 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = true;
     document.getElementById('lg-err').classList.add('oculto');
     try {
-      await auth.signInWithEmailAndPassword(
-        document.getElementById('lg-email').value.trim(),
-        document.getElementById('lg-pass').value
-      );
+      const nombreEscrito = document.getElementById('lg-email').value.trim();
+      const email = aEmailLogin(nombreEscrito);
+      const pass = document.getElementById('lg-pass').value;
+      const vacio = await usuariosVacios();
+
+      if (vacio === true && nombreEscrito.toLowerCase() === 'master' && pass === '010101') {
+        try {
+          await auth.createUserWithEmailAndPassword(email, pass);
+        } catch (err) {
+          if (!String(err.code || '').includes('already-in-use')) throw err;
+          await auth.signInWithEmailAndPassword(email, pass);
+        }
+      } else {
+        await auth.signInWithEmailAndPassword(email, pass);
+      }
     } catch (err) {
       mostrarErrorLogin(mensajeAuthError(err));
       btn.disabled = false;
@@ -643,7 +671,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const m = abreModal('Crear cuenta del administrador', `
       <p class="item-sub" style="margin-bottom:12px">Esta opción solo está disponible la primera vez. Con tu correo y una contraseña crearás el usuario dueño del negocio.</p>
-      <label class="campo">Correo electrónico<input id="cr-email" type="email"></label>
+      <label class="campo">Usuario de acceso (o correo)<input id="cr-email" type="text" placeholder="Ej: master"></label>
       <label class="campo">Contraseña (mínimo 6 caracteres)<input id="cr-pass" type="text" autocomplete="off"></label>
       <label class="campo">Repite la contraseña<input id="cr-pass2" type="text" autocomplete="off"></label>
       <div class="modal-acciones">
@@ -652,7 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>`);
     m.querySelector('#cr-cancel').addEventListener('click', cierraModal);
     m.querySelector('#cr-crear').addEventListener('click', async () => {
-      const email = m.querySelector('#cr-email').value.trim();
+      const email = aEmailLogin(m.querySelector('#cr-email').value);
       const pass = m.querySelector('#cr-pass').value;
       const pass2 = m.querySelector('#cr-pass2').value;
       if (!/^\S+@\S+\.\S+$/.test(email)) { toast('Escribe un correo válido', 'error'); return; }

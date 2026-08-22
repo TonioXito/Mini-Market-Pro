@@ -430,7 +430,7 @@ RENDERERS.configuracion = function () {
         <thead><tr><th>Usuario</th><th>Rol</th><th>Permisos</th><th>Estado</th><th></th></tr></thead>
         <tbody id="usr-tabla"></tbody>
       </table></div>
-      <p class="item-sub" style="margin-top:10px">🔑 Las contraseñas no se pueden cambiar desde aquí: cada persona usa «Olvidé mi contraseña» en la pantalla de entrada.</p>
+      <p class="item-sub" style="margin-top:10px">🔑 Quien tenga un correo real puede cambiar su clave con «Olvidé mi contraseña». Los usuarios creados solo con nombre de usuario no pueden recuperar la clave por correo: si la olvidan, elimínalos y créalos de nuevo aquí.</p>
     </div>` : ''}
   `;
 
@@ -468,7 +468,7 @@ RENDERERS.configuracion = function () {
         resumenPermisos = `${ver} ver · ${usar} usar`;
       }
       return `<tr>
-        <td><b>${esc(u.nombre)}</b>${esYo ? ' <span class="badge azul">tú</span>' : ''}<br><small style="color:var(--muted)">${esc(u.email || '')}</small></td>
+        <td><b>${esc(u.nombre)}</b>${esYo ? ' <span class="badge azul">tú</span>' : ''}<br><small style="color:var(--muted)">usuario: ${esc(mostrarAcceso(u.email))}</small></td>
         <td>${admin ? '<span class="badge verde">Admin</span>' : '<span class="badge gris">Empleado</span>'}</td>
         <td>${admin ? 'Todos los permisos' : resumenPermisos}</td>
         <td>${u.activo === false ? badgeEstadoPago('anulada').replace('Anulada', 'Inactivo') : '<span class="badge verde">Activo</span>'}</td>
@@ -509,7 +509,7 @@ function abrirModalUsuario(u) {
 
   const m = abreModal(esEdicion ? 'Editar usuario' : 'Crear usuario', `
     <label class="campo">Nombre *<input id="us-nombre" type="text" value="${esc(u ? u.nombre : '')}"></label>
-    <label class="campo">Correo electrónico *<input id="us-email" type="email" value="${esc(u ? (u.email || '') : '')}" ${esEdicion ? 'disabled' : ''}></label>
+    <label class="campo">Usuario de acceso *<input id="us-email" type="text" value="${esc(u ? mostrarAcceso(u.email) : '')}" placeholder="Ej: maria" ${esEdicion ? 'disabled' : ''}></label>
     ${esEdicion ? '' : `<label class="campo">Contraseña temporal * (compártela con esa persona; mínimo 6 caracteres)
       <input id="us-pass" type="text" autocomplete="off" placeholder="Ej: venta2026">
     </label>`}
@@ -585,9 +585,9 @@ function abrirModalUsuario(u) {
         cierraModal();
         toast('Usuario actualizado', 'ok');
       } else {
-        const email = m.querySelector('#us-email').value.trim();
+        const email = aEmailLogin(m.querySelector('#us-email').value);
         const pass = m.querySelector('#us-pass').value;
-        if (!email || !/^\S+@\S+\.\S+$/.test(email)) { toast('Correo inválido', 'error'); btn.disabled = false; return; }
+        if (!email || !/^\S+@\S+\.\S+$/.test(email)) { toast('Escribe un usuario válido (sin espacios)', 'error'); btn.disabled = false; return; }
         if (!pass || pass.length < 6) { toast('La contraseña debe tener mínimo 6 caracteres', 'error'); btn.disabled = false; return; }
         await crearUsuarioAdmin({ email, password: pass, nombre, rol, permisos });
         cierraModal();
