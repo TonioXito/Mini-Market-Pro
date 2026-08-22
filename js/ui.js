@@ -112,12 +112,6 @@ function aEmailLogin(v) {
 function mostrarAcceso(email) {
   return String(email || '').replace(DOMINIO_LOCAL, '');
 }
-async function usuariosVacios() {
-  try {
-    const q = await db.collection('usuarios').limit(1).get();
-    return q.empty;
-  } catch { return null; }
-}
 
 function arrancarAuth() {
   if (!CONFIG_OK) { mostrarPantalla('scr-config'); return; }
