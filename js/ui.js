@@ -1,6 +1,7 @@
 'use strict';
 
 const RENDERERS = {};
+const LOGIN_ACTIVO = false;
 let instalacionPWA = null;
 
 function etiquetaModulo(k) {
@@ -115,6 +116,20 @@ function mostrarAcceso(email) {
 
 function arrancarAuth() {
   if (!CONFIG_OK) { mostrarPantalla('scr-config'); return; }
+
+  if (!LOGIN_ACTIVO) {
+    S.user = { uid: 'master-local' };
+    S.perfil = {
+      id: 'master-local',
+      nombre: 'Administrador',
+      rol: 'admin',
+      permisos: permisosCompletos(),
+      activo: true
+    };
+    iniciarApp();
+    return;
+  }
+
   mostrarPantalla('scr-login');
 
   auth.onAuthStateChanged(async (u) => {
