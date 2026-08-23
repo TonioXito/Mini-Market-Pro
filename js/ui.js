@@ -117,6 +117,8 @@ function mostrarAcceso(email) {
 function arrancarAuth() {
   if (!CONFIG_OK) { mostrarPantalla('scr-config'); return; }
 
+  if (!iniciarFirebase()) { mostrarPantalla('scr-config'); return; }
+
   if (!LOGIN_ACTIVO) {
     S.user = { uid: 'master-local' };
     S.perfil = {
