@@ -88,14 +88,22 @@ firebase deploy
 
 ## Paso 5 — Primer uso
 
-1. Abre la aplicación → crea tu usuario administrador (nombre del negocio, tu nombre y la tasa inicial).
+1. Abre la aplicación y entra con el acceso predeterminado:
+   - **Usuario:** `master`
+   - **Clave:** `010101`
+
+   Como es la primera vez, la app crea esa cuenta automáticamente y te pedirá el nombre del negocio, tu nombre y la tasa del día. Ya eres el administrador.
 2. En tu teléfono abre la misma dirección → inicia sesión → menú del navegador → **"Agregar a pantalla de inicio"** / en PC → icono de instalación en la barra de direcciones. ¡Ya tienes la app instalada!
-3. Ve a **Configuración → Usuarios** para crear cuentas a tus trabajadores con sus permisos.
+3. Ve a **Configuración → Usuarios** para crear cuentas a tus trabajadores (puedes usar solo un nombre de usuario, ej: `maria`, sin correo) y definir sus permisos.
+
+> 💡 Recomendación: cuando entres por primera vez con `master`, créate además tu propio usuario personal desde Configuración → Usuarios y usa ese a diario; deja `master` solo como respaldo.
 
 ---
 
 ## Notas
 
+- Los usuarios pueden entrar escribiendo solo su **nombre de usuario** (ej: `master`, `maria`) o un correo completo. Internamente los nombres se guardan como `usuario@minimarket.local`.
+- La clave `010101` es muy corta y conocida: úsala solo para el primer acceso y luego usa claves propias de 6+ caracteres.
+- Quienes tengan correo real pueden recuperar su clave con «Olvidé mi contraseña». Los creados solo con nombre de usuario no: si olvidan la clave, el administrador los elimina y crea de nuevo.
 - Los datos quedan guardados en Firebase (nube) con copia local en cada equipo; si no hay internet puedes seguir viendo los datos y se sincronizan al reconectar.
-- Para cambiar tu contraseña usa **"Olvidé mi contraseña"** en la pantalla de entrada.
 - Si algún día cambias algo del código (archivos), sube de número la constante `CACHE` en `sw.js` para que los teléfonos reciban la actualización.

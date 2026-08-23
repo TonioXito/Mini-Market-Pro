@@ -169,7 +169,7 @@ RENDERERS.clientes = function () {
     </div>
     <div class="card">
       <div class="fila-cab">
-        <h3 style="margin:0">👥 Clientes y cuentas por cobrar</h3>
+        <h3 style="margin:0">👥 Cuentas por cobrar</h3>
         ${usar ? '<button id="cli-nuevo" class="btn btn-verde btn-chico">＋ Nuevo cliente</button>' : ''}
       </div>
       <input id="cli-buscar" type="search" placeholder="🔍 Buscar cliente..." style="margin-bottom:12px" value="${esc(S.cliBusqueda)}">

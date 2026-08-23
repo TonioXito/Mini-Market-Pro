@@ -26,9 +26,9 @@ function construirNav() {
   const principales = permitidos.slice(0, 4);
   const extra = permitidos.slice(4);
   let html = principales.map(k => {
-    const { label, icono } = etiquetaModulo(k);
-    const corto = k === 'clientes' ? 'Clientes' : (k === 'dashboard' ? 'Inicio' : label);
-    return `<button class="bn-item" data-vista="${k}"><span class="bn-icono">${icono}</span>${esc(corto.split(' ')[0])}</button>`;
+    const { icono } = etiquetaModulo(k);
+    const cortosBN = { dashboard: 'Inicio', ventas: 'Ventas', inventario: 'Stock', clientes: 'Por cobrar', proveedores: 'Por pagar', reportes: 'Reportes', configuracion: 'Ajustes' };
+    return `<button class="bn-item" data-vista="${k}"><span class="bn-icono">${icono}</span>${esc(cortosBN[k] || etiquetaModulo(k).label)}</button>`;
   }).join('');
   if (extra.length || true) {
     html += `<button class="bn-item" data-vista="__mas"><span class="bn-icono">☰</span>Más</button>`;
@@ -651,14 +651,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const nombreEscrito = document.getElementById('lg-email').value.trim();
       const email = aEmailLogin(nombreEscrito);
       const pass = document.getElementById('lg-pass').value;
-      const vacio = await usuariosVacios();
 
-      if (vacio === true && nombreEscrito.toLowerCase() === 'master' && pass === '010101') {
+      if (nombreEscrito.toLowerCase() === 'master' && pass === '010101') {
         try {
-          await auth.createUserWithEmailAndPassword(email, pass);
-        } catch (err) {
-          if (!String(err.code || '').includes('already-in-use')) throw err;
           await auth.signInWithEmailAndPassword(email, pass);
+        } catch (errEntrar) {
+          try {
+            await auth.createUserWithEmailAndPassword(email, pass);
+            toast('Cuenta master creada por primera vez ✅', 'ok');
+          } catch (errCrear) {
+            if (String(errCrear.code || '').includes('already-in-use')) throw errEntrar;
+            throw errCrear;
+          }
         }
       } else {
         await auth.signInWithEmailAndPassword(email, pass);

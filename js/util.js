@@ -4,8 +4,8 @@ const MODULOS = [
   ['dashboard', 'Inicio', '🏠'],
   ['ventas', 'Ventas', '🛒'],
   ['inventario', 'Inventario', '📦'],
-  ['clientes', 'Clientes (por cobrar)', '👥'],
-  ['proveedores', 'Proveedores (por pagar)', '🚚'],
+  ['clientes', 'Cuentas por cobrar', '👥'],
+  ['proveedores', 'Cuentas por pagar', '🚚'],
   ['reportes', 'Reportes', '📊'],
   ['configuracion', 'Configuración', '⚙️']
 ];
