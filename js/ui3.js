@@ -389,7 +389,21 @@ RENDERERS.configuracion = function () {
   const tasaActual = (S.negocio && S.negocio.tasaDia) || '';
   const puedeTasa = puede('configuracion', 'usar');
 
+  const mostrarCambioClave = LOGIN_ACTIVO && !!firebase.auth().currentUser;
+
   cont.innerHTML = `
+    ${mostrarCambioClave ? `
+    <div class="card">
+      <h3>🔑 Mi clave de acceso</h3>
+      <p class="item-sub">Tu usuario: <b>${esc(mostrarAcceso(firebase.auth().currentUser.email))}</b></p>
+      <label class="campo">Clave actual<input id="mc-actual" type="password" autocomplete="current-password"></label>
+      <div class="fila">
+        <label class="campo">Clave nueva (mínimo 6)<input id="mc-nueva" type="password" autocomplete="new-password"></label>
+        <label class="campo">Repite la clave nueva<input id="mc-repetir" type="password" autocomplete="new-password"></label>
+      </div>
+      <button id="mc-guardar" class="btn btn-primary">Cambiar mi clave</button>
+    </div>` : ''}
+
     <div class="card">
       <h3>🏪 Negocio</h3>
       <div class="fila fila-movil-horizontal" style="align-items:flex-end">
@@ -433,6 +447,30 @@ RENDERERS.configuracion = function () {
       <p class="item-sub" style="margin-top:10px">🔑 Quien tenga un correo real puede cambiar su clave con «Olvidé mi contraseña». Los usuarios creados solo con nombre de usuario no pueden recuperar la clave por correo: si la olvidan, elimínalos y créalos de nuevo aquí.</p>
     </div>` : ''}
   `;
+
+  if (mostrarCambioClave) {
+    cont.querySelector('#mc-guardar').addEventListener('click', async () => {
+      const actual = cont.querySelector('#mc-actual').value;
+      const nueva = cont.querySelector('#mc-nueva').value;
+      const repetir = cont.querySelector('#mc-repetir').value;
+      if (nueva.length < 6) { toast('La clave nueva debe tener mínimo 6 caracteres', 'error'); return; }
+      if (nueva !== repetir) { toast('Las claves nuevas no coinciden', 'error'); return; }
+      const btn = cont.querySelector('#mc-guardar');
+      btn.disabled = true;
+      try {
+        await cambiarMiClave(actual, nueva);
+        cont.querySelector('#mc-actual').value = '';
+        cont.querySelector('#mc-nueva').value = '';
+        cont.querySelector('#mc-repetir').value = '';
+        toast('Clave cambiada ✅ Úsala la próxima vez que entres', 'ok');
+      } catch (e) {
+        toast(String(e.code || '').includes('wrong-password') || String(e.code || '').includes('invalid-credential')
+          ? 'La clave actual no es correcta'
+          : 'No se pudo cambiar la clave: ' + e.message, 'error');
+      }
+      btn.disabled = false;
+    });
+  }
 
   if (puedeTasa) {
     cont.querySelector('#cf-guardar-neg').addEventListener('click', async () => {

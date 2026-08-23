@@ -401,14 +401,25 @@ async function anularVenta(ventaId) {
 }
 
 async function crearPrimerAdmin(uid, email, nombreNegocio, nombre, tasaInicial) {
+  let negocioExistente = null;
+  try {
+    const snap = await db.collection('config').doc('negocio').get();
+    if (snap.exists) negocioExistente = snap.data();
+  } catch {}
+
   const batch = db.batch();
-  batch.set(db.collection('config').doc('negocio'), {
-    nombreNegocio: nombreNegocio.trim() || 'Mi Minimarket',
-    tasaDia: r2(tasaInicial) || 1,
-    tasaFecha: new Date(),
-    tasaPor: nombre
-  });
-  batch.set(db.collection('config').doc('contadores'), { ventaSeq: 0 });
+  if (!negocioExistente) {
+    batch.set(db.collection('config').doc('negocio'), {
+      nombreNegocio: nombreNegocio.trim() || 'Mi Minimarket',
+      tasaDia: r2(tasaInicial) || 1,
+      tasaFecha: new Date(),
+      tasaPor: nombre
+    });
+    if (r2(tasaInicial) > 0) {
+      batch.set(db.collection('tasa_historial').doc(), { tasa: r2(tasaInicial), fecha: new Date(), usuario: nombre });
+    }
+  }
+  batch.set(db.collection('config').doc('contadores'), { ventaSeq: 0 }, { merge: true });
   batch.set(db.collection('usuarios').doc(uid), {
     nombre: nombre.trim(),
     email,
@@ -417,10 +428,16 @@ async function crearPrimerAdmin(uid, email, nombreNegocio, nombre, tasaInicial) 
     activo: true,
     creadoEn: new Date()
   });
-  if (r2(tasaInicial) > 0) {
-    batch.set(db.collection('tasa_historial').doc(), { tasa: r2(tasaInicial), fecha: new Date(), usuario: nombre });
-  }
   await batch.commit();
+}
+
+async function cambiarMiClave(claveActual, claveNueva) {
+  const u = firebase.auth().currentUser;
+  if (!u || !u.email) throw new Error('No hay sesión activa');
+  if (!claveNueva || claveNueva.length < 6) throw new Error('La clave nueva debe tener mínimo 6 caracteres');
+  const cred = firebase.auth.EmailAuthProvider.credential(u.email, claveActual);
+  await u.reauthenticateWithCredential(cred);
+  await u.updatePassword(claveNueva);
 }
 
 async function crearUsuarioAdmin({ email, password, nombre, rol, permisos }) {

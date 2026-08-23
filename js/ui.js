@@ -1,7 +1,7 @@
 'use strict';
 
 const RENDERERS = {};
-const LOGIN_ACTIVO = false;
+const LOGIN_ACTIVO = true;
 let instalacionPWA = null;
 
 function etiquetaModulo(k) {
