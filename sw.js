@@ -1,59 +1,62 @@
-// Service Worker de Lito Barber Studio
-// Permite que la app funcione sin conexión una vez instalada en el teléfono.
-// Nota: los datos de citas y clientes viven en localStorage (no aquí), así que
-// seguirán disponibles sin conexión sin importar lo que haga este archivo.
-
-const CACHE_NAME = 'lito-barber-cache-v13';
-const ARCHIVOS_APP_SHELL = [
-    './',
-    './index.html',
-    './manifest.json',
-    './logo.png',
-    './icon-192.png',
-    './icon-512.png'
+const CACHE = 'minimarket-v10';
+const ASSETS = [
+  './',
+  './index.html',
+  './styles.css',
+  './js/util.js',
+  './js/data.js',
+  './js/ui.js',
+  './js/ui2.js',
+  './js/ui3.js',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
-self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then((cache) => cache.addAll(ARCHIVOS_APP_SHELL).catch(() => {
-                // Si un archivo del shell no existe todavía, no bloquea la instalación
-            }))
-    );
+self.addEventListener('install', (e) => {
+  e.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await Promise.allSettled(ASSETS.map((a) => cache.add(a)));
     self.skipWaiting();
+  })());
 });
 
-self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then((nombres) =>
-            Promise.all(
-                nombres
-                    .filter((nombre) => nombre !== CACHE_NAME)
-                    .map((nombre) => caches.delete(nombre))
-            )
-        )
-    );
-    self.clients.claim();
+self.addEventListener('activate', (e) => {
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
-self.addEventListener('fetch', (event) => {
-    // Solo maneja peticiones GET del mismo origen (evita interferir con WhatsApp, etc.)
-    if (event.request.method !== 'GET') return;
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== location.origin) return;
 
-    event.respondWith(
-        caches.match(event.request).then((respuestaCache) => {
-            const fetchPromise = fetch(event.request)
-                .then((respuestaRed) => {
-                    if (respuestaRed && respuestaRed.status === 200 && respuestaRed.type === 'basic') {
-                        const clone = respuestaRed.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-                    }
-                    return respuestaRed;
-                })
-                .catch(() => respuestaCache);
+  if (req.mode === 'navigate') {
+    e.respondWith((async () => {
+      try {
+        return await fetch(req);
+      } catch {
+        const cache = await caches.open(CACHE);
+        return (await cache.match('./index.html')) || Response.error();
+      }
+    })());
+    return;
+  }
 
-            // Estrategia "cache primero, luego red" para que la app abra al instante
-            return respuestaCache || fetchPromise;
-        })
-    );
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const hit = await cache.match(req);
+    if (hit) return hit;
+    try {
+      const res = await fetch(req);
+      if (res.ok && url.origin === location.origin) cache.put(req, res.clone());
+      return res;
+    } catch {
+      return Response.error();
+    }
+  })());
 });
