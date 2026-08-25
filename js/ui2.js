@@ -31,6 +31,7 @@ RENDERERS.inventario = function () {
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button id="inv-exp-xlsx" class="btn btn-gris btn-chico">Excel</button>
           <button id="inv-exp-csv" class="btn btn-gris btn-chico">CSV</button>
+          ${usar ? '<button id="inv-importar" class="btn btn-gris btn-chico">📥 Importar</button>' : ''}
           ${usar ? '<button id="inv-nuevo" class="btn btn-verde btn-chico">＋ Nuevo producto</button>' : ''}
         </div>
       </div>
@@ -92,6 +93,7 @@ RENDERERS.inventario = function () {
     cont.querySelector('#inv-nuevo').addEventListener('click', () => abrirModalProducto(null));
     cont.querySelector('#inv-exp-xlsx').addEventListener('click', () => exportarInventario('xlsx'));
     cont.querySelector('#inv-exp-csv').addEventListener('click', () => exportarInventario('csv'));
+    cont.querySelector('#inv-importar').addEventListener('click', abrirModalImportar);
   }
 
   function abrirModalProducto(p) {
@@ -166,8 +168,206 @@ RENDERERS.inventario = function () {
   }
 };
 
+/* ==================== IMPORTAR INVENTARIO (EXCEL) ==================== */
+
 function celdaCSV(v) {
   return '"' + String(v == null ? '' : v).replaceAll('"', '""') + '"';
+}
+
+const ENCABEZADOS_IMPORT = ['Nombre', 'Código', 'Departamento', 'Unidad', 'Costo USD', 'Precio USD', 'Stock', 'Stock mínimo'];
+
+function normalizarEncabezado(t) {
+  return String(t || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function columnaPorEncabezado(enc) {
+  if (enc.includes('nombre')) return 'nombre';
+  if (enc.includes('codigo')) return 'codigo';
+  if (enc.includes('depart') || enc.includes('categoria') || enc.includes('depto')) return 'categoria';
+  if (enc.includes('unidad')) return 'unidad';
+  if (enc.includes('costo')) return 'costoUSD';
+  if (enc.includes('precio')) return 'precioUSD';
+  if ((enc.includes('stock') && enc.includes('min')) || enc.includes('minimo')) return 'stockMinimo';
+  if (enc.includes('stock') || enc.includes('existencia')) return 'stock';
+  return null;
+}
+
+function descargarPlantillaInventario() {
+  if (typeof XLSX === 'undefined') { toast('No se pudo generar la plantilla', 'error'); return; }
+  const ejemplos = [
+    ['Harina de maíz', '75001234', 'Harinas', 'Unidad', 1.2, 1.8, 24, 5],
+    ['Queso blanco', '', 'Charcutería', 'Peso (kg)', 3.5, 4.9, 12.5, 2]
+  ];
+  const ayuda = [
+    ['Campo', 'Qué poner'],
+    ['Nombre', 'OBLIGATORIO. Si ya existe un producto con ese mismo nombre (o código), sus datos se actualizan en vez de duplicarlo.'],
+    ['Código', 'Opcional. Código de barra o interno. Si coincide con un producto existente, ese producto se actualiza.'],
+    ['Departamento', 'Ej: Harinas, Charcutería, Bebidas, Aseo. Agrupa el inventario y el POS.'],
+    ['Unidad', 'Escribe "Unidad" o "Peso (kg)". En los de peso, el precio es por KILOGRAMO y el stock va en kilos (ej: 12.5).'],
+    ['Costo USD', 'Lo que te cuesta a ti, en dólares. Puede ir vacío.'],
+    ['Precio USD', 'OBLIGATORIO. Precio de venta en dólares. Para productos por peso, es el precio POR KILOGRAMO.'],
+    ['Stock', 'Cantidad disponible (admite decimales para peso). Si va vacío queda en 0.'],
+    ['Stock mínimo', 'Cantidad donde salta la alerta de poco stock. Si va vacío queda en 0.']
+  ];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([ENCABEZADOS_IMPORT, ...ejemplos]);
+  ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 10 }, { wch: 11 }, { wch: 9 }, { wch: 13 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Productos');
+  const wsA = XLSX.utils.aoa_to_sheet(ayuda);
+  wsA['!cols'] = [{ wch: 14 }, { wch: 100 }];
+  XLSX.utils.book_append_sheet(wb, wsA, 'Ayuda');
+  XLSX.writeFile(wb, 'plantilla_inventario.xlsx');
+  toast('Plantilla descargada', 'ok');
+}
+
+function abrirModalImportar() {
+  const m = abreModal('📥 Importar inventario desde Excel', `
+    <p style="color:var(--muted)">Si un producto ya existe (por su <b>código</b> o su <b>nombre</b>) se actualiza; si no existe, se crea.</p>
+    <button id="im-plantilla" class="btn btn-gris btn-block">⬇️ Paso 1: Descargar la plantilla</button>
+    <label class="campo" style="margin-top:10px">Paso 2: Elige tu archivo llenado
+      <input id="im-archivo" type="file" accept=".xlsx,.xls,.csv">
+    </label>
+    <div id="im-resultado"></div>
+    <div class="modal-acciones" id="im-acciones"></div>`);
+  m.querySelector('#im-plantilla').addEventListener('click', descargarPlantillaInventario);
+  m.querySelector('#im-archivo').addEventListener('change', async (e) => {
+    const archivo = e.target.files[0];
+    if (!archivo) return;
+    const zona = m.querySelector('#im-resultado');
+    m.querySelector('#im-acciones').innerHTML = '';
+    zona.innerHTML = '<div class="vacio">Leyendo archivo...</div>';
+    try {
+      const filas = await leerHojaImport(archivo);
+      mostrarResumenImport(m, filas);
+    } catch (err) {
+      zona.innerHTML = `<div class="vacio">❌ No se pudo leer el archivo:<br>${esc(err.message)}</div>`;
+    }
+  });
+}
+
+function leerHojaImport(archivo) {
+  return new Promise((resolve, reject) => {
+    if (typeof XLSX === 'undefined') { reject(new Error('el lector de Excel no cargó, recarga la página')); return; }
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error('no se pudo leer el archivo'));
+    fr.onload = (e) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        for (const nombreHoja of wb.SheetNames) {
+          const filas = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], { header: 1, defval: '' });
+          const idx = filas.findIndex(f => f.some(c => normalizarEncabezado(c).includes('nombre')));
+          if (idx >= 0 && idx <= 3) { resolve(filas.slice(idx)); return; }
+        }
+        reject(new Error('no encontré una fila con las columnas (Nombre, Precio USD...)'));
+      } catch (err) { reject(err); }
+    };
+    fr.readAsArrayBuffer(archivo);
+  });
+}
+
+function mostrarResumenImport(m, filasCrudas) {
+  const encabezados = normalizarEncabezado(filasCrudas[0]).map((enc) => columnaPorEncabezado(enc));
+  const posDe = {};
+  encabezados.forEach((campo, i) => { if (campo && !(campo in posDe)) posDe[campo] = i; });
+  if (!('nombre' in posDe)) throw new Error('el archivo debe tener una columna "Nombre"');
+  if (!('precioUSD' in posDe)) throw new Error('el archivo debe tener una columna "Precio USD"');
+
+  const porCodigo = new Map();
+  const porNombre = new Map();
+  S.productos.forEach(p => {
+    if (p.codigo) porCodigo.set(String(p.codigo).trim().toLowerCase(), p);
+    porNombre.set(String(p.nombre).trim().toLowerCase(), p);
+  });
+
+  const resultados = new Map();
+  const errores = [];
+  filasCrudas.slice(1).forEach((f, i) => {
+    const nFila = i + 2;
+    const val = (campo) => posDe[campo] !== undefined ? f[posDe[campo]] : '';
+    const nombre = String(val('nombre') || '').trim();
+    const codigo = String(val('codigo')).trim();
+    if (!nombre && !codigo) return;
+    if (!nombre) { errores.push({ fila: nFila, motivo: 'falta el Nombre' }); return; }
+    const precio = num(val('precioUSD'));
+    if (!(precio > 0)) { errores.push({ fila: nFila, motivo: `"${nombre}": falta el Precio USD` }); return; }
+    const uniTxt = normalizarEncabezado(val('unidad'));
+    const unidad = (uniTxt.includes('kg') || uniTxt.includes('peso')) ? 'kg' : 'unidad';
+    const existente = (codigo && porCodigo.get(codigo.toLowerCase())) || porNombre.get(nombre.toLowerCase());
+    const item = {
+      id: existente ? existente.id : null,
+      nombre,
+      codigo,
+      categoria: String(val('categoria') || '').trim(),
+      unidad,
+      costoUSD: Math.max(num(val('costoUSD')), 0),
+      precioUSD: precio,
+      stock: Math.max(num(val('stock')), 0),
+      stockMinimo: Math.max(num(val('stockMinimo')), 0)
+    };
+    resultados.set(item.id || nombre.toLowerCase(), item);
+  });
+
+  const items = Array.from(resultados.values());
+  const nuevos = items.filter(x => !x.id);
+  const actualizar = items.filter(x => x.id);
+  const zona = m.querySelector('#im-resultado');
+  const acc = m.querySelector('#im-acciones');
+
+  if (!items.length) {
+    zona.innerHTML = '<div class="vacio">❌ No encontré productos válidos.<br>Revisa que las columnas Nombre y Precio USD estén llenas.</div>';
+    return;
+  }
+
+  zona.innerHTML = `
+    <div class="resumen-pos">
+      <div class="resumen-linea"><span>🆕 Productos nuevos</span><b>${nuevos.length}</b></div>
+      <div class="resumen-linea"><span>🔄 Productos a actualizar</span><b>${actualizar.length}</b></div>
+      ${errores.length ? `<div class="resumen-linea"><span>⚠️ Filas con problemas</span><b>${errores.length}</b></div>` : ''}
+    </div>
+    ${errores.length ? `<div style="max-height:130px;overflow:auto;font-size:.78rem;color:#fca5a5">${errores.map(er => `Fila ${er.fila}: ${esc(er.motivo)}`).join('<br>')}</div>` : ''}
+    <p class="item-sub" style="margin-top:8px">⚠️ El stock del archivo REEMPLAZA el stock actual de los productos que ya existen.</p>`;
+  acc.innerHTML = `
+    <button class="btn btn-gris" id="im-cancel">Cancelar</button>
+    <button class="btn btn-verde" id="im-aplicar">✅ Importar ${items.length} producto${items.length === 1 ? '' : 's'}</button>`;
+  acc.querySelector('#im-cancel').addEventListener('click', cierraModal);
+  acc.querySelector('#im-aplicar').addEventListener('click', async () => {
+    const btn = acc.querySelector('#im-aplicar');
+    btn.disabled = true;
+    try {
+      await aplicarImportacion(items);
+      cierraModal();
+      toast(`Inventario importado: ${nuevos.length} nuevos, ${actualizar.length} actualizados ✅`, 'ok');
+    } catch (err) {
+      toast('Error al guardar: ' + err.message, 'error');
+      btn.disabled = false;
+    }
+  });
+}
+
+async function aplicarImportacion(items) {
+  const ahora = new Date();
+  for (let i = 0; i < items.length; i += 400) {
+    const lote = items.slice(i, i + 400);
+    const batch = db.batch();
+    lote.forEach(it => {
+      const datos = {
+        nombre: it.nombre,
+        codigo: it.codigo,
+        categoria: it.categoria,
+        unidad: it.unidad,
+        costoUSD: r2(it.costoUSD),
+        precioUSD: r2(it.precioUSD),
+        stock: r2(it.stock),
+        stockMinimo: r2(it.stockMinimo),
+        actualizadoEn: ahora
+      };
+      if (it.id) batch.update(db.collection('productos').doc(it.id), datos);
+      else batch.set(db.collection('productos').doc(), { ...datos, creadoEn: ahora });
+    });
+    await batch.commit();
+  }
 }
 
 /* ==================== CLIENTES (POR COBRAR) ==================== */
