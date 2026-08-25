@@ -23,6 +23,15 @@ const METODOS = [
 
 const nombreMetodo = (k) => (METODOS.find(m => m[0] === k) || [k, k])[1];
 
+function departamentosExistentes() {
+  const set = new Set(S.productos.map(p => String(p.categoria || '').trim()).filter(Boolean));
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+function sufijoUnidad(p) {
+  return p && p.unidad === 'kg' ? ' kg' : '';
+}
+
 function r2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 function num(v) { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n; }
 

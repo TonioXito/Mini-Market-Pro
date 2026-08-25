@@ -12,7 +12,10 @@ RENDERERS.inventario = function () {
     String(p.codigo || '').toLowerCase().includes(q) ||
     String(p.categoria || '').toLowerCase().includes(q));
   if (S.invSoloBajos) lista = lista.filter(p => r2(p.stock) <= r2(p.stockMinimo));
+  if (S.invDepartamento) lista = lista.filter(p => String(p.categoria || '').trim() === S.invDepartamento);
 
+  const deptos = departamentosExistentes();
+  if (S.invDepartamento && !deptos.includes(S.invDepartamento)) S.invDepartamento = '';
   const bajos = S.productos.filter(p => r2(p.stock) <= r2(p.stockMinimo)).length;
   const valorInventario = r2(S.productos.reduce((a, p) => a + (p.costoUSD || 0) * (p.stock || 0), 0));
 
@@ -37,8 +40,9 @@ RENDERERS.inventario = function () {
           <input type="checkbox" id="inv-bajos" style="width:auto" ${S.invSoloBajos ? 'checked' : ''}> Solo bajos
         </label>
       </div>
+      <div class="chips" id="inv-deptos" style="margin-bottom:10px"></div>
       <div class="tabla-wrap"><table class="tabla">
-        <thead><tr><th>Producto</th><th>Categoría</th><th class="num">Costo $</th><th class="num">Precio $</th><th class="num">Stock</th>${usar ? '<th></th>' : ''}</tr></thead>
+        <thead><tr><th>Producto</th><th>Depto.</th><th class="num">Costo $</th><th class="num">Precio $</th><th class="num">Stock</th>${usar ? '<th></th>' : ''}</tr></thead>
         <tbody id="inv-tabla"></tbody>
       </table></div>
     </div>`;
@@ -50,8 +54,8 @@ RENDERERS.inventario = function () {
       <td><b>${esc(p.nombre)}</b>${p.codigo ? `<br><small style="color:var(--muted)">cód: ${esc(p.codigo)}</small>` : ''}</td>
       <td>${esc(p.categoria || '—')}</td>
       <td class="num">${fmt$(p.costoUSD)}</td>
-      <td class="num"><b style="color:#4ade80">${fmt$(p.precioUSD)}</b></td>
-      <td class="num"><span class="badge ${r2(p.stock) <= 0 ? 'rojo' : (bajo ? 'naranja' : 'verde')}">${fmtCant(p.stock)}</span></td>
+      <td class="num"><b style="color:#4ade80">${fmt$(p.precioUSD)}</b>${p.unidad === 'kg' ? '<br><small style="color:var(--muted)">por kg</small>' : ''}</td>
+      <td class="num"><span class="badge ${r2(p.stock) <= 0 ? 'rojo' : (bajo ? 'naranja' : 'verde')}">${fmtCant(p.stock)}${sufijoUnidad(p)}</span></td>
       ${usar ? `<td class="acciones-cell">
         <button class="mini-btn" data-editar="${p.id}">✏️ Editar</button>
         <button class="mini-btn peligro" data-borrar="${p.id}">🗑</button>
@@ -75,6 +79,15 @@ RENDERERS.inventario = function () {
   });
   cont.querySelector('#inv-bajos').addEventListener('change', (e) => { S.invSoloBajos = e.target.checked; RENDERERS.inventario(); });
 
+  const zonaDeptos = cont.querySelector('#inv-deptos');
+  zonaDeptos.innerHTML =
+    `<button class="chip ${S.invDepartamento ? '' : 'activo'}" data-depto="">Todos</button>` +
+    deptos.map(d => `<button class="chip ${S.invDepartamento === d ? 'activo' : ''}" data-depto="${esc(d)}">${esc(d)}</button>`).join('');
+  zonaDeptos.querySelectorAll('.chip').forEach(ch => ch.addEventListener('click', () => {
+    S.invDepartamento = ch.dataset.depto;
+    RENDERERS.inventario();
+  }));
+
   if (usar) {
     cont.querySelector('#inv-nuevo').addEventListener('click', () => abrirModalProducto(null));
     cont.querySelector('#inv-exp-xlsx').addEventListener('click', () => exportarInventario('xlsx'));
@@ -87,15 +100,22 @@ RENDERERS.inventario = function () {
       <label class="campo">Nombre *<input id="pr-nombre" type="text" value="${esc(p ? p.nombre : '')}"></label>
       <div class="fila">
         <label class="campo">Código / barra<input id="pr-codigo" type="text" value="${esc(p ? p.codigo : '')}"></label>
-        <label class="campo">Categoría<input id="pr-cat" type="text" value="${esc(p ? p.categoria : '')}" placeholder="Ej: Harinas"></label>
+        <label class="campo">Departamento<input id="pr-cat" type="text" list="dl-deptos-inv" value="${esc(p ? p.categoria : '')}" placeholder="Ej: Charcutería"></label>
+        <datalist id="dl-deptos-inv">${departamentosExistentes().map(d => `<option value="${esc(d)}">`).join('')}</datalist>
       </div>
       <div class="fila">
         <label class="campo">Costo ($)<input id="pr-costo" type="number" step="0.01" min="0" value="${p ? p.costoUSD : ''}"></label>
         <label class="campo">Precio de venta ($) *<input id="pr-precio" type="number" step="0.01" min="0" value="${p ? p.precioUSD : ''}"></label>
       </div>
+      <label class="campo">¿Cómo se vende?
+        <select id="pr-unidad">
+          <option value="unidad" ${(p && p.unidad === 'kg') ? '' : 'selected'}>Por unidad (1, 2, 3…)</option>
+          <option value="kg" ${(p && p.unidad === 'kg') ? 'selected' : ''}>Por peso — el precio es por kilogramo</option>
+        </select>
+      </label>
       <div class="fila">
-        <label class="campo">Stock actual<input id="pr-stock" type="number" step="0.5" value="${p ? p.stock : ''}"></label>
-        <label class="campo">Stock mínimo (alerta)<input id="pr-min" type="number" step="1" min="0" value="${p ? p.stockMinimo : 3}"></label>
+        <label class="campo">Stock actual${(p && p.unidad === 'kg') || !p ? ' (kg si vendes por peso)' : ''}<input id="pr-stock" type="number" step="0.01" value="${p ? p.stock : ''}"></label>
+        <label class="campo">Stock mínimo (alerta)<input id="pr-min" type="number" step="0.01" min="0" value="${p ? p.stockMinimo : 3}"></label>
       </div>
       <div class="modal-acciones">
         <button class="btn btn-gris" id="pr-cancelar">Cancelar</button>
@@ -114,6 +134,7 @@ RENDERERS.inventario = function () {
           nombre: m.querySelector('#pr-nombre').value,
           codigo: m.querySelector('#pr-codigo').value,
           categoria: m.querySelector('#pr-cat').value,
+          unidad: m.querySelector('#pr-unidad').value,
           costoUSD: m.querySelector('#pr-costo').value,
           precioUSD: precio,
           stock: m.querySelector('#pr-stock').value,
@@ -126,14 +147,14 @@ RENDERERS.inventario = function () {
   }
 
   function exportarInventario(formato) {
-    const filas = [['Nombre', 'Código', 'Categoría', 'Costo USD', 'Precio USD', 'Stock', 'Stock mínimo']];
-    lista.forEach(p => filas.push([p.nombre, p.codigo || '', p.categoria || '', r2(p.costoUSD), r2(p.precioUSD), r2(p.stock), r2(p.stockMinimo)]));
+    const filas = [['Nombre', 'Código', 'Departamento', 'Unidad', 'Costo USD', 'Precio USD', 'Stock', 'Stock mínimo']];
+    lista.forEach(p => filas.push([p.nombre, p.codigo || '', p.categoria || '', p.unidad === 'kg' ? 'Peso (kg)' : 'Unidad', r2(p.costoUSD), r2(p.precioUSD), r2(p.stock), r2(p.stockMinimo)]));
     filas.push([]);
-    filas.push(['Valor total a costo', '', '', '', '', fmt$(valorInventario), '']);
+    filas.push(['Valor total a costo', '', '', '', '', '', fmt$(valorInventario), '']);
     if (formato === 'xlsx' && typeof XLSX !== 'undefined') {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(filas);
-      ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 11 }, { wch: 12 }, { wch: 8 }, { wch: 13 }];
+      ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 16 }, { wch: 11 }, { wch: 11 }, { wch: 12 }, { wch: 10 }, { wch: 13 }];
       XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
       XLSX.writeFile(wb, `inventario_${valorInputFecha(new Date())}.xlsx`);
     } else {

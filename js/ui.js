@@ -293,7 +293,7 @@ RENDERERS.dashboard = function () {
   divBajo.innerHTML = bajoStock.length ? bajoStock.slice(0, 8).map(p =>
     `<div class="item-lista">
       <div class="item-principal"><div class="item-titulo">${esc(p.nombre)}</div><div class="item-sub">mínimo: ${fmtCant(p.stockMinimo)}</div></div>
-      <div class="item-derecha"><span class="badge ${r2(p.stock) <= 0 ? 'rojo' : 'naranja'}">stock: ${fmtCant(p.stock)}</span></div>
+      <div class="item-derecha"><span class="badge ${r2(p.stock) <= 0 ? 'rojo' : 'naranja'}">stock: ${fmtCant(p.stock)}${sufijoUnidad(p)}</span></div>
     </div>`
   ).join('') : '<div class="vacio">Todo el inventario está bien 👍</div>';
 
@@ -338,6 +338,7 @@ RENDERERS.ventas = function () {
         <div class="pos-buscador">
           <input id="pos-buscar" type="search" placeholder="🔍 Buscar producto por nombre, código o categoría..." value="${esc(S.posBusqueda)}">
         </div>
+        <div id="pos-deptos" class="chips"></div>
         <div id="pos-grid" class="productos-grid"></div>
       </div>
       <div class="card" id="pos-card-carrito"></div>
@@ -388,43 +389,131 @@ function tasaPosActual() {
 function pintarGridProductos() {
   const grid = document.getElementById('pos-grid');
   if (!grid) return;
+
+  const zonaDeptos = document.getElementById('pos-deptos');
+  const deptos = departamentosExistentes();
+  if (S.posDepartamento && !deptos.includes(S.posDepartamento)) S.posDepartamento = '';
+  if (zonaDeptos) {
+    zonaDeptos.innerHTML =
+      `<button class="chip ${S.posDepartamento ? '' : 'activo'}" data-depto="">Todos</button>` +
+      deptos.map(d => `<button class="chip ${S.posDepartamento === d ? 'activo' : ''}" data-depto="${esc(d)}">${esc(d)}</button>`).join('');
+    zonaDeptos.querySelectorAll('.chip').forEach(ch => ch.addEventListener('click', () => {
+      S.posDepartamento = ch.dataset.depto;
+      pintarGridProductos();
+    }));
+  }
+
   const q = S.posBusqueda.trim().toLowerCase();
   let lista = S.productos.slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  if (S.posDepartamento) lista = lista.filter(p => String(p.categoria || '').trim() === S.posDepartamento);
   if (q) lista = lista.filter(p =>
     String(p.nombre).toLowerCase().includes(q) ||
     String(p.codigo || '').toLowerCase().includes(q) ||
     String(p.categoria || '').toLowerCase().includes(q));
   grid.innerHTML = lista.length ? lista.map(p => {
     const stockBajo = r2(p.stock) <= r2(p.stockMinimo);
+    const esKg = p.unidad === 'kg';
     return `<button class="prod-btn" data-id="${p.id}">
       <span class="prod-nombre">${esc(p.nombre)}</span>
-      <span class="prod-precio">${fmt$(p.precioUSD)}</span>
-      <span class="prod-stock ${stockBajo ? 'bajo' : ''}">stock: ${fmtCant(p.stock)}</span>
+      <span class="prod-precio">${fmt$(p.precioUSD)}${esKg ? ' <small style="font-size:.68rem">/kg</small>' : ''}</span>
+      <span class="prod-stock ${stockBajo ? 'bajo' : ''}">stock: ${fmtCant(p.stock)}${sufijoUnidad(p)}</span>
     </button>`;
   }).join('') : '<div class="vacio" style="grid-column:1/-1">No hay productos que coincidan.<br>Agrégalos en Inventario.</div>';
   grid.querySelectorAll('.prod-btn').forEach(b => b.addEventListener('click', () => agregarAlCarrito(b.dataset.id)));
 }
 
-function agregarAlCarrito(id) {
+function agregarAlCarrito(id, cantidadPedida) {
   const p = S.productos.find(x => x.id === id);
   if (!p) return;
-  const ya = S.carrito.find(i => i.productoId === id);
-  if (ya) ya.cantidad = r2(ya.cantidad + 1);
-  else S.carrito.push({
-    productoId: p.id,
-    nombre: p.nombre,
-    cantidad: 1,
-    precioUSD: r2(p.precioUSD),
-    costoUSD: r2(p.costoUSD || 0),
-    totalUSD: r2(p.precioUSD)
+  const esKg = p.unidad === 'kg';
+
+  const sumar = (cant) => {
+    cant = r2(cant);
+    if (!(cant > 0)) return;
+    const ya = S.carrito.find(i => i.productoId === id);
+    if (ya) {
+      ya.cantidad = r2(ya.cantidad + cant);
+      ya.totalUSD = r2(ya.precioUSD * ya.cantidad);
+    } else {
+      S.carrito.push({
+        productoId: p.id,
+        nombre: p.nombre,
+        unidad: esKg ? 'kg' : 'unidad',
+        cantidad: cant,
+        precioUSD: r2(p.precioUSD),
+        costoUSD: r2(p.costoUSD || 0),
+        totalUSD: r2(p.precioUSD * cant)
+      });
+    }
+    pintarCarrito();
+  };
+
+  if (esKg && !cantidadPedida) {
+    abrirModalPeso(p, sumar);
+    return;
+  }
+  sumar(cantidadPedida || 1);
+}
+
+function abrirModalPeso(p, alAgregar) {
+  const m = abreModal('⚖️ Peso de ' + p.nombre, `
+    <div class="resumen-pos"><div class="resumen-linea"><span>Precio</span><b>${fmt$(p.precioUSD)} por kg</b></div></div>
+    <div class="chips" id="ps-rapidos" style="margin-bottom:10px">
+      ${[[250, '250 g'], [500, '½ kg'], [750, '750 g'], [1000, '1 kg'], [1500, '1½ kg'], [2000, '2 kg']]
+        .map(([g, t]) => `<button class="chip" data-g="${g}">${t}</button>`).join('')}
+    </div>
+    <div class="fila">
+      <label class="campo">Peso<input id="ps-cant" type="number" step="0.001" min="0.001" placeholder="Cantidad"></label>
+      <label class="campo">Unidad
+        <select id="ps-unidad">
+          <option value="kg">kilogramos</option>
+          <option value="g">gramos</option>
+        </select>
+      </label>
+    </div>
+    <div class="resumen-pos">
+      <div class="resumen-linea total"><span>Agregar al carrito</span><span id="ps-total">${fmt$(0)}</span></div>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn btn-gris" id="ps-cancel">Cancelar</button>
+      <button class="btn btn-verde" id="ps-ok">Agregar</button>
+    </div>`);
+
+  const calcularKg = () => {
+    const v = num(m.querySelector('#ps-cant').value);
+    return m.querySelector('#ps-unidad').value === 'g' ? v / 1000 : v;
+  };
+  const actualizar = () => {
+    m.querySelector('#ps-total').textContent = fmt$(r2(p.precioUSD * calcularKg()));
+  };
+  m.querySelectorAll('#ps-rapidos .chip').forEach(ch => ch.addEventListener('click', () => {
+    const gramos = Number(ch.dataset.g);
+    if (gramos >= 1000) {
+      m.querySelector('#ps-cant').value = gramos / 1000;
+      m.querySelector('#ps-unidad').value = 'kg';
+    } else {
+      m.querySelector('#ps-cant').value = gramos;
+      m.querySelector('#ps-unidad').value = 'g';
+    }
+    actualizar();
+  }));
+  m.querySelector('#ps-cant').addEventListener('input', actualizar);
+  m.querySelector('#ps-unidad').addEventListener('change', actualizar);
+  m.querySelector('#ps-cancel').addEventListener('click', cierraModal);
+  m.querySelector('#ps-ok').addEventListener('click', () => {
+    const kg = r2(calcularKg());
+    if (!(kg > 0)) { toast('Indica el peso', 'error'); return; }
+    cierraModal();
+    alAgregar(kg);
   });
-  pintarCarrito();
+  m.querySelector('#ps-cant').focus();
 }
 
 function cambiarCantidad(id, delta) {
   const it = S.carrito.find(i => i.productoId === id);
   if (!it) return;
-  it.cantidad = Math.max(0.5, r2(it.cantidad + delta));
+  const paso = it.unidad === 'kg' ? 0.25 : 1;
+  it.cantidad = Math.max(paso, r2(it.cantidad + paso * delta));
   it.totalUSD = r2(it.precioUSD * it.cantidad);
   pintarCarrito();
 }
@@ -464,16 +553,19 @@ function pintarCarrito() {
       ${S.carrito.length ? '<button id="pos-vaciar" class="mini-btn peligro">Vaciar</button>' : ''}
     </div>
     <div id="pos-lista-carrito">
-      ${S.carrito.length ? S.carrito.map(i => `
+      ${S.carrito.length ? S.carrito.map(i => {
+        const esKg = i.unidad === 'kg';
+        return `
         <div class="cart-item">
-          <div class="cart-nombre">${esc(i.nombre)}<small>${fmt$(i.precioUSD)} c/u · ${fmt$(i.totalUSD)}</small></div>
+          <div class="cart-nombre">${esc(i.nombre)}<small>${fmt$(i.precioUSD)}${esKg ? ' /kg' : ' c/u'} × ${fmtCant(i.cantidad)}${esKg ? ' kg' : ''} · ${fmt$(i.totalUSD)}</small></div>
           <div class="stepper">
             <button data-acc="menos" data-id="${i.productoId}">−</button>
-            <input data-acc="cant" data-id="${i.productoId}" type="number" step="0.5" min="0.5" value="${i.cantidad}">
+            <input data-acc="cant" data-id="${i.productoId}" type="number" step="${esKg ? '0.05' : '1'}" min="${esKg ? '0.01' : '1'}" value="${i.cantidad}">
             <button data-acc="mas" data-id="${i.productoId}">+</button>
           </div>
           <button class="mini-btn peligro" data-acc="quitar" data-id="${i.productoId}">✕</button>
-        </div>`).join('') : '<div class="vacio">Toca los productos para agregarlos</div>'}
+        </div>`;
+      }).join('') : '<div class="vacio">Toca los productos para agregarlos</div>'}
     </div>
 
     <div class="fila" style="margin-top:12px">

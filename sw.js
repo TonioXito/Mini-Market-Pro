@@ -1,4 +1,4 @@
-const CACHE = 'minimarket-v8';
+const CACHE = 'minimarket-v9';
 const ASSETS = [
   './',
   './index.html',
