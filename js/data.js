@@ -14,6 +14,7 @@ const S = {
   user: null,
   perfil: null,
   negocio: null,
+  negocioId: '',
   productos: [],
   clientes: [],
   proveedores: [],
@@ -56,6 +57,32 @@ function permisosCompletos() {
   return p;
 }
 
+function negocioIdActual() {
+  if (S.negocioId) return S.negocioId;
+  return (S.negocio && S.negocio.negocioId) || (S.perfil && S.perfil.negocioId) || '';
+}
+
+function slugNegocio(nombre) {
+  const base = String(nombre || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  return base || 'mi-minimarket';
+}
+
+async function slugDisponible(nombre) {
+  const base = slugNegocio(nombre);
+  let cand = base;
+  let i = 1;
+  for (;;) {
+    const snap = await db.collection('negocios').doc(cand).get();
+    if (!snap.exists) return cand;
+    i++;
+    cand = base + '-' + i;
+  }
+}
+
 function iniciarFirebase() {
   if (!CONFIG_OK) return false;
   if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -75,10 +102,12 @@ function appSecundariaAuth() {
 
 function iniciarEscuchas() {
   quitarEscuchas();
+  const nid = negocioIdActual();
+  if (!nid) return;
 
   S.desuscribir.push(
-    db.collection('config').doc('negocio').onSnapshot(snap => {
-      S.negocio = snap.exists ? snap.data() : { nombreNegocio: 'Mi Minimarket', tasaDia: 1 };
+    db.collection('negocios').doc(nid).onSnapshot(snap => {
+      S.negocio = snap.exists ? snap.data() : { negocioId: nid, nombreNegocio: 'Mi Minimarket', tasaDia: 1 };
       const el = document.getElementById('sb-nombre-negocio');
       if (el) el.textContent = S.negocio.nombreNegocio || 'Mi Minimarket';
       refrescarChipTasa();
@@ -87,14 +116,14 @@ function iniciarEscuchas() {
   );
 
   S.desuscribir.push(
-    db.collection('productos').onSnapshot(snap => {
+    db.collection('productos').where('negocioId', '==', nid).onSnapshot(snap => {
       S.productos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       refrescarVistaActiva();
     }, err => console.error('productos', err))
   );
 
   S.desuscribir.push(
-    db.collection('clientes').onSnapshot(snap => {
+    db.collection('clientes').where('negocioId', '==', nid).onSnapshot(snap => {
       S.clientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       S.clientes.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
       refrescarVistaActiva();
@@ -102,7 +131,7 @@ function iniciarEscuchas() {
   );
 
   S.desuscribir.push(
-    db.collection('proveedores').onSnapshot(snap => {
+    db.collection('proveedores').where('negocioId', '==', nid).onSnapshot(snap => {
       S.proveedores = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       S.proveedores.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
       refrescarVistaActiva();
@@ -110,49 +139,60 @@ function iniciarEscuchas() {
   );
 
   S.desuscribir.push(
-    db.collection('compras').orderBy('fecha', 'desc').limit(300).onSnapshot(snap => {
-      S.compras = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    db.collection('compras').where('negocioId', '==', nid).onSnapshot(snap => {
+      S.compras = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => aFecha(b.fecha) - aFecha(a.fecha))
+        .slice(0, 300);
       refrescarVistaActiva();
     }, err => console.error('compras', err))
   );
 
   const hace90 = sumarDias(new Date(), -90);
   S.desuscribir.push(
-    db.collection('ventas').where('fecha', '>=', hace90).orderBy('fecha', 'desc').limit(500)
-      .onSnapshot(snap => {
-        S.ventasRecientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        refrescarVistaActiva();
-      }, err => console.error('ventas', err))
+    db.collection('ventas').where('negocioId', '==', nid).onSnapshot(snap => {
+      S.ventasRecientes = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(v => aFecha(v.fecha) && aFecha(v.fecha) >= hace90)
+        .sort((a, b) => aFecha(b.fecha) - aFecha(a.fecha))
+        .slice(0, 500);
+      refrescarVistaActiva();
+    }, err => console.error('ventas', err))
   );
 
   S.desuscribir.push(
-    db.collection('abonos').where('fecha', '>=', hace90).orderBy('fecha', 'desc').limit(500)
-      .onSnapshot(snap => {
-        S.abonosRecientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        refrescarVistaActiva();
-      }, err => console.error('abonos', err))
+    db.collection('abonos').where('negocioId', '==', nid).onSnapshot(snap => {
+      S.abonosRecientes = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(a => aFecha(a.fecha) && aFecha(a.fecha) >= hace90)
+        .sort((a, b) => aFecha(b.fecha) - aFecha(a.fecha))
+        .slice(0, 500);
+      refrescarVistaActiva();
+    }, err => console.error('abonos', err))
   );
 
   S.desuscribir.push(
-    db.collection('pagos_prov').where('fecha', '>=', hace90).orderBy('fecha', 'desc').limit(500)
-      .onSnapshot(snap => {
-        S.pagosRecientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        refrescarVistaActiva();
-      }, err => console.error('pagos_prov', err))
+    db.collection('pagos_prov').where('negocioId', '==', nid).onSnapshot(snap => {
+      S.pagosRecientes = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(p => aFecha(p.fecha) && aFecha(p.fecha) >= hace90)
+        .sort((a, b) => aFecha(b.fecha) - aFecha(a.fecha))
+        .slice(0, 500);
+      refrescarVistaActiva();
+    }, err => console.error('pagos_prov', err))
   );
 
   S.desuscribir.push(
-    db.collection('tasa_historial').orderBy('fecha', 'desc').limit(12)
-      .onSnapshot(snap => {
-        S.tasaHistorial = snap.docs.map(d => d.data());
-        refrescarVistaActiva();
-      }, () => {})
+    db.collection('tasa_historial').where('negocioId', '==', nid).onSnapshot(snap => {
+      S.tasaHistorial = snap.docs.map(d => d.data())
+        .sort((a, b) => aFecha(b.fecha) - aFecha(a.fecha))
+        .slice(0, 12);
+      refrescarVistaActiva();
+    }, () => {})
   );
 }
 
 function escucharUsuarios() {
+  const nid = negocioIdActual();
+  if (!nid) return;
   S.desuscribir.push(
-    db.collection('usuarios').onSnapshot(snap => {
+    db.collection('usuarios').where('negocioId', '==', nid).onSnapshot(snap => {
       S.usuarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       refrescarVistaActiva();
     }, err => console.error('usuarios', err))
@@ -167,16 +207,16 @@ function quitarEscuchas() {
 async function actualizarTasa(nuevaTasa) {
   const t = r2(nuevaTasa);
   if (!(t > 0)) throw new Error('La tasa debe ser mayor que cero');
-  await db.collection('config').doc('negocio').set({
+  await db.collection('negocios').doc(negocioIdActual()).set({
     tasaDia: t,
     tasaFecha: new Date(),
     tasaPor: S.perfil ? S.perfil.nombre : ''
   }, { merge: true });
-  await db.collection('tasa_historial').add({ tasa: t, fecha: new Date(), usuario: S.perfil ? S.perfil.nombre : '' });
+  await db.collection('tasa_historial').add({ negocioId: negocioIdActual(), tasa: t, fecha: new Date(), usuario: S.perfil ? S.perfil.nombre : '' });
 }
 
 async function guardarNombreNegocio(nombre) {
-  await db.collection('config').doc('negocio').set({ nombreNegocio: nombre.trim() || 'Mi Minimarket' }, { merge: true });
+  await db.collection('negocios').doc(negocioIdActual()).set({ nombreNegocio: nombre.trim() || 'Mi Minimarket' }, { merge: true });
 }
 
 async function guardarProducto(datos, idExistente) {
@@ -196,6 +236,7 @@ async function guardarProducto(datos, idExistente) {
     await db.collection('productos').doc(idExistente).update(limpio);
     return idExistente;
   }
+  limpio.negocioId = negocioIdActual();
   limpio.creadoEn = new Date();
   const ref = await db.collection('productos').add(limpio);
   return ref.id;
@@ -216,6 +257,7 @@ async function guardarCliente(datos, idExistente) {
     await db.collection('clientes').doc(idExistente).update(limpio);
     return idExistente;
   }
+  limpio.negocioId = negocioIdActual();
   limpio.saldoUSD = 0;
   limpio.creadoEn = new Date();
   const ref = await db.collection('clientes').add(limpio);
@@ -239,6 +281,7 @@ async function guardarProveedor(datos, idExistente) {
     await db.collection('proveedores').doc(idExistente).update(limpio);
     return idExistente;
   }
+  limpio.negocioId = negocioIdActual();
   const ref = await db.collection('proveedores').add(limpio);
   return ref.id;
 }
@@ -254,6 +297,7 @@ async function guardarCompra(datos) {
   if (!(datos.totalUSD > 0)) throw new Error('El monto debe ser mayor que cero');
   const prov = S.proveedores.find(p => p.id === datos.proveedorId);
   const ref = await db.collection('compras').add({
+    negocioId: negocioIdActual(),
     proveedorId: datos.proveedorId,
     proveedorNombre: prov ? prov.nombre : '(eliminado)',
     descripcion: (datos.descripcion || '').trim() || 'Compra a crédito',
@@ -274,9 +318,11 @@ async function registrarPagoProveedor(compraId, pago) {
     const csnap = await tx.get(cref);
     if (!csnap.exists) throw new Error('La compra ya no existe');
     const compra = csnap.data();
+    if (compra.negocioId && compra.negocioId !== negocioIdActual()) throw new Error('Esta compra no pertenece a tu negocio');
     const saldo = r2(compra.totalUSD) - r2(compra.pagadoUSD);
     const aplicar = Math.min(montoUSD, Math.max(saldo, 0));
     tx.set(db.collection('pagos_prov').doc(), {
+      negocioId: negocioIdActual(),
       compraId,
       proveedorId: compra.proveedorId,
       proveedorNombre: compra.proveedorNombre,
@@ -299,7 +345,9 @@ async function registrarAbono(clienteId, abono) {
     const clref = db.collection('clientes').doc(clienteId);
     const csnap = await tx.get(clref);
     if (!csnap.exists) throw new Error('El cliente ya no existe');
+    if (csnap.data().negocioId && csnap.data().negocioId !== negocioIdActual()) throw new Error('Este cliente no pertenece a tu negocio');
     tx.set(db.collection('abonos').doc(), {
+      negocioId: negocioIdActual(),
       clienteId,
       clienteNombre: csnap.data().nombre,
       fecha: new Date(),
@@ -328,16 +376,22 @@ async function cobrarVenta(pos) {
   if (deuda > 0.009 && !cliente) throw new Error('Hay un monto sin pagar: selecciona un cliente para dejarle la deuda');
 
   const items = S.carrito.map(i => ({ ...i }));
+  const nid = negocioIdActual();
 
   const datos = {};
   await db.runTransaction(async (tx) => {
-    const contRef = db.collection('config').doc('contadores');
+    const contRef = db.collection('negocios').doc(nid);
     const lecturas = [];
     for (const it of items) {
       const ref = db.collection('productos').doc(it.productoId);
       lecturas.push(tx.get(ref).then(s => [ref, s]));
     }
     const resultados = await Promise.all(lecturas);
+    for (const [, snap] of resultados) {
+      if (snap.exists && snap.data().negocioId && snap.data().negocioId !== nid) {
+        throw new Error('Uno de los productos no pertenece a tu negocio');
+      }
+    }
     const contSnap = await tx.get(contRef);
     const seq = ((contSnap.exists && contSnap.data().ventaSeq) || 0) + 1;
     const vref = db.collection('ventas').doc();
@@ -345,6 +399,7 @@ async function cobrarVenta(pos) {
     datos.totalUSD = totalUSD;
 
     tx.set(vref, {
+      negocioId: nid,
       numero: datos.numero,
       fecha: new Date(),
       items,
@@ -383,6 +438,7 @@ async function anularVenta(ventaId) {
     const vsnap = await tx.get(vref);
     if (!vsnap.exists) throw new Error('La venta no existe');
     const venta = vsnap.data();
+    if (venta.negocioId && venta.negocioId !== negocioIdActual()) throw new Error('Esta venta no pertenece a tu negocio');
     if (venta.estado === 'anulada') throw new Error('Esta venta ya está anulada');
 
     const lecturas = [];
@@ -404,26 +460,24 @@ async function anularVenta(ventaId) {
 }
 
 async function crearPrimerAdmin(uid, email, nombreNegocio, nombre, tasaInicial) {
-  let negocioExistente = null;
-  try {
-    const snap = await db.collection('config').doc('negocio').get();
-    if (snap.exists) negocioExistente = snap.data();
-  } catch {}
+  const nid = await slugDisponible(nombreNegocio || 'Mi Minimarket');
 
   const batch = db.batch();
-  if (!negocioExistente) {
-    batch.set(db.collection('config').doc('negocio'), {
-      nombreNegocio: nombreNegocio.trim() || 'Mi Minimarket',
-      tasaDia: r2(tasaInicial) || 1,
-      tasaFecha: new Date(),
-      tasaPor: nombre
-    });
-    if (r2(tasaInicial) > 0) {
-      batch.set(db.collection('tasa_historial').doc(), { tasa: r2(tasaInicial), fecha: new Date(), usuario: nombre });
-    }
+  batch.set(db.collection('negocios').doc(nid), {
+    negocioId: nid,
+    nombreNegocio: (nombreNegocio || '').trim() || 'Mi Minimarket',
+    tasaDia: r2(tasaInicial) || 1,
+    tasaFecha: new Date(),
+    tasaPor: (nombre || '').trim(),
+    ventaSeq: 0,
+    adminUids: [uid],
+    creadoEn: new Date()
+  });
+  if (r2(tasaInicial) > 0) {
+    batch.set(db.collection('tasa_historial').doc(), { negocioId: nid, tasa: r2(tasaInicial), fecha: new Date(), usuario: nombre });
   }
-  batch.set(db.collection('config').doc('contadores'), { ventaSeq: 0 }, { merge: true });
   batch.set(db.collection('usuarios').doc(uid), {
+    negocioId: nid,
     nombre: nombre.trim(),
     email,
     rol: 'admin',
@@ -432,6 +486,69 @@ async function crearPrimerAdmin(uid, email, nombreNegocio, nombre, tasaInicial) 
     creadoEn: new Date()
   });
   await batch.commit();
+  return nid;
+}
+
+async function migrarLegadoAUnNegocio() {
+  if (!S.user || !S.user.uid) return '';
+  if (S.perfil && S.perfil.negocioId) return S.perfil.negocioId;
+  const uid = S.user.uid;
+
+  let legNegocio = null;
+  let legCont = null;
+  try {
+    const a = await db.collection('config').doc('negocio').get();
+    if (a.exists) legNegocio = a.data();
+  } catch {}
+  try {
+    const b = await db.collection('config').doc('contadores').get();
+    if (b.exists) legCont = b.data();
+  } catch {}
+
+  let nid = (legNegocio && legNegocio.negocioId) || '';
+  const refNeg = db.collection('negocios').doc(nid);
+  const snapNeg = nid ? await refNeg.get() : null;
+
+  if (!snapNeg || !snapNeg.exists) {
+    const existentes = await db.collection('negocios').get();
+    if (existentes.size === 1) {
+      nid = existentes.docs[0].id;
+    } else {
+      nid = await slugDisponible((legNegocio && legNegocio.nombreNegocio) || 'Mi Minimarket');
+      await db.collection('negocios').doc(nid).set({
+        negocioId: nid,
+        nombreNegocio: (legNegocio && legNegocio.nombreNegocio) || 'Mi Minimarket',
+        tasaDia: (legNegocio && r2(legNegocio.tasaDia)) || 1,
+        tasaFecha: (legNegocio && legNegocio.tasaFecha) || new Date(),
+        tasaPor: (legNegocio && legNegocio.tasaPor) || '',
+        ventaSeq: (legCont && legCont.ventaSeq) || 0,
+        adminUids: [uid],
+        creadoEn: new Date()
+      }, { merge: true });
+    }
+  }
+
+  const colecciones = ['productos', 'clientes', 'proveedores', 'compras', 'ventas', 'abonos', 'pagos_prov', 'tasa_historial'];
+  for (const col of colecciones) {
+    const snap = await db.collection(col).get();
+    const refs = snap.docs.filter(d => d.data().negocioId !== nid).map(d => d.ref);
+    for (let i = 0; i < refs.length; i += 400) {
+      const batch = db.batch();
+      refs.slice(i, i + 400).forEach(r => batch.set(r, { negocioId: nid }, { merge: true }));
+      await batch.commit();
+    }
+  }
+
+  const usSnap = await db.collection('usuarios').get();
+  const usRefs = usSnap.docs.filter(d => d.data().negocioId !== nid).map(d => d.ref);
+  for (let i = 0; i < usRefs.length; i += 400) {
+    const batch = db.batch();
+    usRefs.slice(i, i + 400).forEach(r => batch.set(r, { negocioId: nid }, { merge: true }));
+    await batch.commit();
+  }
+
+  if (S.perfil) S.perfil.negocioId = nid;
+  return nid;
 }
 
 async function cambiarMiClave(claveActual, claveNueva) {
@@ -448,6 +565,7 @@ async function crearUsuarioAdmin({ email, password, nombre, rol, permisos }) {
   const cred = await secAuth.createUserWithEmailAndPassword(email.trim(), password);
   const uid = cred.user.uid;
   await db.collection('usuarios').doc(uid).set({
+    negocioId: negocioIdActual(),
     nombre: nombre.trim(),
     email: email.trim(),
     rol: rol === 'admin' ? 'admin' : 'empleado',

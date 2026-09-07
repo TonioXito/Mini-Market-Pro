@@ -348,11 +348,13 @@ function mostrarResumenImport(m, filasCrudas) {
 
 async function aplicarImportacion(items) {
   const ahora = new Date();
+  const nid = negocioIdActual();
   for (let i = 0; i < items.length; i += 400) {
     const lote = items.slice(i, i + 400);
     const batch = db.batch();
     lote.forEach(it => {
       const datos = {
+        negocioId: nid,
         nombre: it.nombre,
         codigo: it.codigo,
         categoria: it.categoria,
@@ -534,13 +536,14 @@ RENDERERS.clientes = function () {
   async function abrirDetalleCliente(c) {
     if (!c) return;
     abreModal('Detalle de ' + c.nombre, '<div class="vacio">Cargando...</div>');
+    const nid = negocioIdActual();
     const [venSnap, aboSnap] = await Promise.all([
-      db.collection('ventas').where('clienteId', '==', c.id).limit(60).get(),
-      db.collection('abonos').where('clienteId', '==', c.id).limit(60).get()
+      db.collection('ventas').where('negocioId', '==', nid).get(),
+      db.collection('abonos').where('negocioId', '==', nid).get()
     ]);
     const movimientos = [
-      ...venSnap.docs.map(d => ({ tipo: 'venta', ...d.data() })),
-      ...aboSnap.docs.map(d => ({ tipo: 'abono', ...d.data() }))
+      ...venSnap.docs.filter(d => d.data().clienteId === c.id).map(d => ({ tipo: 'venta', ...d.data() })),
+      ...aboSnap.docs.filter(d => d.data().clienteId === c.id).map(d => ({ tipo: 'abono', ...d.data() }))
     ].sort((a, b) => aFecha(b.fecha) - aFecha(a.fecha)).slice(0, 50);
 
     const saldo = r2(c.saldoUSD);
@@ -747,8 +750,10 @@ RENDERERS.proveedores = function () {
 
     async function abrirHistorialPagosProv(c) {
       abreModal('Pagos de ' + c.proveedorNombre, '<div class="vacio">Cargando...</div>');
-      const snap = await db.collection('pagos_prov').where('compraId', '==', c.id).limit(100).get();
-      const pagos = snap.docs.map(d => d.data()).sort((a, b) => aFecha(b.fecha) - aFecha(a.fecha)).slice(0, 50);
+      const nid = negocioIdActual();
+      const snap = await db.collection('pagos_prov').where('negocioId', '==', nid).get();
+      const pagos = snap.docs.filter(d => d.data().compraId === c.id).map(d => d.data())
+        .sort((a, b) => aFecha(b.fecha) - aFecha(a.fecha)).slice(0, 50);
       abreModal('Pagos de ' + c.proveedorNombre, `
         <div class="grid-kpi" style="margin-bottom:12px">
           <div class="kpi verde"><div class="kpi-etiqueta">Total pagado</div><div class="kpi-valor">${fmt$(r2(c.pagadoUSD))}</div></div>

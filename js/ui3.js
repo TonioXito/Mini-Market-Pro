@@ -72,14 +72,19 @@ async function generarReporte() {
   if (resultado) resultado.innerHTML = '<div class="card"><div class="vacio">Calculando reporte...</div></div>';
   try {
     const { ini, finExclu } = rangoDeFiltro();
+    const enRango = (fecha) => { const f = aFecha(fecha); return !!f && f >= ini && f < finExclu; };
+    const nid = negocioIdActual();
     const [venSnap, aboSnap, pagSnap] = await Promise.all([
-      db.collection('ventas').where('fecha', '>=', ini).where('fecha', '<', finExclu).get(),
-      db.collection('abonos').where('fecha', '>=', ini).where('fecha', '<', finExclu).get(),
-      db.collection('pagos_prov').where('fecha', '>=', ini).where('fecha', '<', finExclu).get()
+      db.collection('ventas').where('negocioId', '==', nid).get(),
+      db.collection('abonos').where('negocioId', '==', nid).get(),
+      db.collection('pagos_prov').where('negocioId', '==', nid).get()
     ]);
-    const ventas = venSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => aFecha(a.fecha) - aFecha(b.fecha));
-    const abonosLista = aboSnap.docs.map(d => d.data());
-    const pagos = pagSnap.docs.map(d => d.data());
+    const ventas = venSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(v => enRango(v.fecha))
+      .sort((a, b) => aFecha(a.fecha) - aFecha(b.fecha));
+    const abonosLista = aboSnap.docs.map(d => d.data()).filter(b => enRango(b.fecha));
+    const pagos = pagSnap.docs.map(d => d.data()).filter(p => enRango(p.fecha));
 
     const activas = ventas.filter(v => v.estado !== 'anulada');
     const anuladas = ventas.length - activas.length;

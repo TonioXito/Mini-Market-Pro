@@ -146,6 +146,7 @@ function arrancarAuth() {
       const snap = await db.collection('usuarios').doc(u.uid).get();
       if (snap.exists && snap.data().activo !== false) {
         S.perfil = { id: snap.id, ...snap.data() };
+        if (!S.perfil.negocioId) S.perfil.negocioId = await migrarLegadoAUnNegocio();
         iniciarApp();
         return;
       }
@@ -176,6 +177,7 @@ function mostrarErrorLogin(msg) {
 function iniciarApp() {
   mostrarPantalla('app');
   S.listo = true;
+  S.negocioId = S.perfil.negocioId;
   document.getElementById('sb-nombre-negocio').textContent = (S.negocio && S.negocio.nombreNegocio) || 'Mi Minimarket';
   document.getElementById('tb-usuario').textContent = S.perfil.nombre || '';
   document.getElementById('sb-usuario').innerHTML = `<b>${esc(S.perfil.nombre)}</b>${esAdmin() ? 'Administrador' : 'Empleado'}${S.perfil.email ? ' · ' + esc(S.perfil.email) : ''}`;
@@ -839,8 +841,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     btn.disabled = true;
     try {
-      await crearPrimerAdmin(S.user.uid, S.user.email, negocio, nombre, tasa > 0 ? tasa : 1);
-      S.perfil = { id: S.user.uid, nombre: nombre.trim(), email: S.user.email, rol: 'admin', permisos: permisosCompletos(), activo: true };
+      const nid = await crearPrimerAdmin(S.user.uid, S.user.email, negocio, nombre, tasa > 0 ? tasa : 1);
+      S.perfil = { id: S.user.uid, negocioId: nid, nombre: nombre.trim(), email: S.user.email, rol: 'admin', permisos: permisosCompletos(), activo: true };
       iniciarApp();
     } catch (e) {
       errEl.textContent = mensajeAuthError(e);
