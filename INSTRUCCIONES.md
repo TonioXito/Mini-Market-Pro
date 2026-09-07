@@ -11,6 +11,7 @@ Aplicación para **computadora y teléfono** que sincroniza todo en tiempo real 
 - 📊 **Reportes**: ventas del día / semana / mes / rango propio, ganancia estimada, desglose por método de pago, productos más vendidos. Descarga en **Excel (.xlsx)**, **CSV** o **TXT (bloc de notas)** — todos editables.
 - 💱 **Tasa del día**: la cambias cuando quieras y se usa en todas las operaciones.
 - 👤 **Usuarios**: el administrador crea usuarios con correo y contraseña temporal y decide qué puede **ver** y qué puede **usar** cada uno.
+- 🏪 **Multi-negocio**: cada cuenta tiene su propio `negocioId`. Todo lo que registras (ventas, productos, clientes, deudas…) queda separado y **nadie de otro negocio puede verlo ni modificarlo**. El aislamiento se aplica en la propia base de datos (reglas de Firestore), no solo en la pantalla.
 
 ---
 
@@ -40,20 +41,15 @@ Listo ✅ — no hay que crear ningún usuario aquí; los usuarios se crean solo
 
 1. Menú izquierdo: **Firestore Database** → **Crear base de datos**.
 2. Elige **Modo de producción** y la ubicación sugerida (`us-east1`) → Habilitar.
-3. Pestaña **Reglas**, borra lo que hay y pega esto:
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
-    }
-  }
-}
-```
+3. Pestaña **Reglas**, borra lo que hay y pega el contenido del archivo **`firestore.rules`** de esta carpeta (versionada con el proyecto).
 
 4. Clic en **Publicar**.
+
+> ⚠️ **ORDEN MUY IMPORTANTE si ya tenías la app funcionando:** estas reglas nuevas bloquean los datos que todavía no tienen `negocioId`.
+> 1. **Primero** sube los archivos nuevos del código (ver "Notas").
+> 2. Entra **una vez** a la app y espera unos segundos a que cargue (en ese acceso la app **migra automáticamente** tus datos al nuevo formato: copia tu negocio, la tasa y la numeración de ventas, y etiqueta cada registro con su negocio).
+> 3. **Después** (recién cuando la app cargó bien) pega el contenido de `firestore.rules` y pulsa **Publicar**.
+> 4. Puedes verificarlo desde la pestaña **Datos**: cada documento de `productos`, `ventas`, `clientes`, etc., debe tener el campo `negocioId`.
 
 ## Paso 4 — Abrir la aplicación
 
@@ -107,3 +103,5 @@ firebase deploy
 - Quienes tengan correo real pueden recuperar su clave con «Olvidé mi contraseña». Los creados solo con nombre de usuario no: si olvidan la clave, el administrador los elimina y crea de nuevo.
 - Los datos quedan guardados en Firebase (nube) con copia local en cada equipo; si no hay internet puedes seguir viendo los datos y se sincronizan al reconectar.
 - Si algún día cambias algo del código (archivos), sube de número la constante `CACHE` en `sw.js` para que los teléfonos reciban la actualización.
+- Cada negocio tiene su propia numeración de ventas (`V-00001`, `V-00002`…): no comparte números con otros negocios.
+- La base de datos guarda una copia de la tasa que se usó en cada operación, así los reportes no cambian si modificas la tasa hoy.

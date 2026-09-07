@@ -1,0 +1,169 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logueado() {
+      return request.auth != null;
+    }
+
+    function docUsuario(uid) {
+      return /databases/$(database)/documents/usuarios/$(uid);
+    }
+
+    function perfilDe(uid) {
+      return get(docUsuario(uid)).data;
+    }
+
+    /* Negocio al que pertenece el usuario que hace la petición. */
+    function miNegocio() {
+      return logueado() && exists(docUsuario(request.auth.uid))
+        ? perfilDe(request.auth.uid).negocioId
+        : null;
+    }
+
+    /* El usuario de la petición es admin del negocio dado. */
+    function adminActual(nid) {
+      return logueado() && nid != null
+        && exists(/databases/$(database)/documents/negocios/$(nid))
+        && get(/databases/$(database)/documents/negocios/$(nid)).data.adminUids.hasAny([request.auth.uid]);
+    }
+
+    /* El usuario de la petición es miembro ACTIVO del negocio dado. */
+    function miembroActivo(nid) {
+      return logueado() && nid != null
+        && exists(docUsuario(request.auth.uid))
+        && perfilDe(request.auth.uid).negocioId == nid
+        && perfilDe(request.auth.uid).activo != false;
+    }
+
+    /* Para no admins: solo pueden avanzar la numeración de ventas, sin tocar lo demás. */
+    function soloAvanzaVentas() {
+      return request.resource.data.nombreNegocio == resource.data.nombreNegocio
+        && request.resource.data.tasaDia == resource.data.tasaDia
+        && request.resource.data.tasaFecha == resource.data.tasaFecha
+        && request.resource.data.tasaPor == resource.data.tasaPor
+        && request.resource.data.ventaSeq >= resource.data.ventaSeq;
+    }
+
+    /* Los datos de trabajo (productos, ventas, etc.) solo se tocan dentro del propio negocio. */
+    function datosAccesibles() {
+      return logueado() && miembroActivo(resource.data.negocioId)
+        && resource.data.negocioId == miNegocio();
+    }
+    function datosCreables() {
+      return logueado() && miembroActivo(request.resource.data.negocioId)
+        && request.resource.data.negocioId == miNegocio();
+    }
+    function datosActualizables() {
+      return logueado() && miembroActivo(resource.data.negocioId)
+        && resource.data.negocioId == miNegocio()
+        && request.resource.data.negocioId == resource.data.negocioId;
+    }
+
+    /* Documentos de configuración heredados: ya no se usan. */
+    match /config/{doc} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    /* ===== Negocios ===== */
+    match /negocios/{negocioId} {
+      allow read: if miembroActivo(negocioId) || adminActual(negocioId);
+      /* Alta: solo alguien sin negocio puede crear el suyo (primer acceso). */
+      allow create: if logueado()
+        && request.resource.data.negocioId == negocioId
+        && request.resource.data.adminUids.hasAny([request.auth.uid])
+        && request.resource.data.ventaSeq >= 0
+        && (!exists(docUsuario(request.auth.uid))
+            || perfilDe(request.auth.uid).negocioId == null
+            || perfilDe(request.auth.uid).negocioId == negocioId);
+      /* Cambios (tasa, nombre): solo el admin, sin cambiar de dueño ni reasignar.
+         Los empleados solo pueden avanzar la numeración de ventas (ventaSeq). */
+      allow update: if logueado()
+        && miembroActivo(negocioId)
+        && request.resource.data.negocioId == negocioId
+        && request.resource.data.adminUids == resource.data.adminUids
+        && (adminActual(negocioId) || soloAvanzaVentas());
+      allow delete: if false;
+    }
+
+    /* ===== Usuarios ===== */
+    match /usuarios/{uid} {
+      /* Cada uno lee su propio perfil; los admins leen a los de su negocio. */
+      allow read: if logueado()
+        && (request.auth.uid == uid || adminActual(resource.data.negocioId));
+      /* Alta: el propio admin al crear su cuenta, o un admin creando a alguien de SU negocio. */
+      allow create: if logueado()
+        && request.resource.data.negocioId != null
+        && request.resource.data.activo != false
+        && adminActual(request.resource.data.negocioId);
+      /* Cambios de permisos / activo: solo admin del mismo negocio; no se puede cambiar de negocio. */
+      allow update: if logueado()
+        && request.resource.data.negocioId == resource.data.negocioId
+        && adminActual(resource.data.negocioId);
+      allow delete: if logueado() && adminActual(resource.data.negocioId);
+    }
+
+    /* ===== Datos del negocio (todos con negocioId obligatorio) ===== */
+    match /productos/{id} {
+      allow read: if datosAccesibles();
+      allow create: if datosCreables();
+      allow update: if datosActualizables();
+      allow delete: if logueado() && miembroActivo(resource.data.negocioId)
+        && resource.data.negocioId == miNegocio();
+    }
+
+    match /clientes/{id} {
+      allow read: if datosAccesibles();
+      allow create: if datosCreables();
+      allow update: if datosActualizables();
+      allow delete: if logueado() && miembroActivo(resource.data.negocioId)
+        && resource.data.negocioId == miNegocio();
+    }
+
+    match /proveedores/{id} {
+      allow read: if datosAccesibles();
+      allow create: if datosCreables();
+      allow update: if datosActualizables();
+      allow delete: if logueado() && miembroActivo(resource.data.negocioId)
+        && resource.data.negocioId == miNegocio();
+    }
+
+    match /compras/{id} {
+      allow read: if datosAccesibles();
+      allow create: if datosCreables();
+      allow update: if datosActualizables();
+      allow delete: if false;
+    }
+
+    match /ventas/{id} {
+      allow read: if datosAccesibles();
+      allow create: if datosCreables();
+      allow update: if datosActualizables();
+      /* Se anula cambiando estado; no se borra. */
+      allow delete: if false;
+    }
+
+    match /abonos/{id} {
+      allow read: if datosAccesibles();
+      allow create: if datosCreables();
+      allow update: if datosActualizables();
+      allow delete: if logueado() && miembroActivo(resource.data.negocioId)
+        && resource.data.negocioId == miNegocio();
+    }
+
+    match /pagos_prov/{id} {
+      allow read: if datosAccesibles();
+      allow create: if datosCreables();
+      allow update: if datosActualizables();
+      allow delete: if false;
+    }
+
+    match /tasa_historial/{id} {
+      allow read: if datosAccesibles();
+      allow create: if datosCreables();
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}
